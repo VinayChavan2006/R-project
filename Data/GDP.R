@@ -1,4 +1,7 @@
 ### More prev year GDP data
+library(rvest)
+library(tidyverse)
+library(dplyr)
 
 # scraping the site
 html <- read_html("https://en.wikipedia.org/wiki/List_of_countries_by_past_and_projected_GDP_(nominal)")
