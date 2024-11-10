@@ -73,10 +73,22 @@ ui <- fluidPage(
     ),
     mainPanel(
       tabsetPanel( id = "tabs",
-        tabPanel("Overview", fluidRow( column(12, withSpinner(plotOutput("TopPlot"))), column(12, DTOutput("medalTable")) )),
-        tabPanel("GDP vs Medals", withSpinner(plotOutput("gdpPlot"))),
-        tabPanel("Life Expectancy vs Medals", withSpinner(plotlyOutput("lifeExpPlot"))),
-        tabPanel("Sex Ratio vs Medals",withSpinner(imageOutput("genderPlot")))
+                   tabPanel("Overview", tabsetPanel(
+                     tabPanel("Plot", withSpinner(plotOutput("TopPlot"))),
+                     tabPanel("Data", withSpinner(DTOutput("medalTable")))
+                   )),
+                   tabPanel("GDP vs Medals", tabsetPanel(
+                     tabPanel("Plot", withSpinner(plotOutput("gdpPlot"))),
+                     tabPanel("Data", withSpinner(DTOutput("gdpData")))
+                   )),
+                   tabPanel("Life Expectancy vs Medals", tabsetPanel(
+                     tabPanel("Plot", withSpinner(plotlyOutput("lifeExpPlot"))),
+                     tabPanel("Data", withSpinner(DTOutput("lifeExpData")))
+                   )),
+                   tabPanel("Sex Ratio vs Medals",tabsetPanel(
+                     tabPanel("Plot", withSpinner(imageOutput("genderPlot"))),
+                     tabPanel("Data", withSpinner(DTOutput("genderData")))
+                   ))
       )
     )
   )
@@ -91,7 +103,9 @@ server <- function(input, output, session) {
                Silver = sum(Medal == "Silver", na.rm = TRUE),
                Bronze = sum(Medal == "Bronze", na.rm = TRUE), 
                Total = Gold + Silver + Bronze ) %>% arrange(desc(Total))
-  
+  output$medalTable <- renderDT({
+    datatable(medalDat, options = list(pageLength = 10, autoWidth = TRUE)) 
+  })
   # Overview plot
   output$TopPlot <- renderPlot({
     n <- input$bins 
@@ -120,9 +134,7 @@ server <- function(input, output, session) {
       ) + labs(x = "Country", y = "Medals", title = paste0("Medals won by top ",n," countries(1896-2016)"))
   })
   
-  output$medalTable <- renderDT({
-    datatable(medalDat %>% filter(Total > 0), options = list(pageLength = 10, autoWidth = TRUE)) 
-    })
+ 
   
   output$heatMapPlot <- renderPlotly({
     sports_data <- olympics %>% group_by(Country,Sport) %>%
