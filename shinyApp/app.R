@@ -46,10 +46,73 @@ load(url("https://raw.githubusercontent.com/VinayChavan2006/R-project/main/Data/
 load(url("https://raw.githubusercontent.com/VinayChavan2006/R-project/main/Data/datasets/NominalGDP.Rdata"))
 load(url("https://raw.githubusercontent.com/VinayChavan2006/R-project/main/Data/datasets/Lifeexp.Rdata"))
 colnames(olympics)[colnames(olympics) == "Team"] = "Country"
+colnames(sex_ratio_data)[colnames(sex_ratio_data) == '`Country/region`'] = "Country"
 olympics <- olympics %>%
   inner_join(continent_data,by = 'Country')
 conts <- unique(olympics$Continent)
 
+medalDat <- olympics %>% select(Medal,Country,Year) %>%
+  group_by(Country) %>% 
+  summarise( Gold = sum(Medal == "Gold", na.rm = TRUE),
+             Silver = sum(Medal == "Silver", na.rm = TRUE),
+             Bronze = sum(Medal == "Bronze", na.rm = TRUE), 
+             Total = Gold + Silver + Bronze ) %>% arrange(desc(Total))
+
+sports_data <- olympics %>% group_by(Country,Sport) %>%
+  summarise( Gold = sum(Medal == "Gold", na.rm = TRUE),
+             Silver = sum(Medal == "Silver", na.rm = TRUE), 
+             Bronze = sum(Medal == "Bronze", na.rm = TRUE), 
+             Total = Gold + Silver + Bronze ) %>% 
+  arrange(desc(Total)) %>% head(50)
+
+
+# Transform the data to wide format
+sports_data_wide <- dcast(sports_data, Country ~ Sport, value.var = "Total", fill = 0)
+# Melt the data back to long format for ggplot2 
+sports_data_long <- melt(sports_data_wide, id.vars = "Country") 
+
+
+lifeExpDat <- olympics %>%
+  filter(Continent %in% conts) %>%
+  filter(Sex == "F") %>%
+  group_by(Country) %>%
+  summarise( Gold = sum(Medal == "Gold", na.rm = TRUE),
+             Silver = sum(Medal == "Silver", na.rm = TRUE), 
+             Bronze = sum(Medal == "Bronze", na.rm = TRUE), 
+             Total = Gold + Silver + Bronze ) %>% 
+  arrange(desc(Total)) %>% 
+  inner_join(life_expectancy_data,by = 'Country')  %>%
+  mutate(Total_Medals = ifelse(Total >= mean(Total), "Above Average", "Below Average")) %>%
+  inner_join(continent_data,by = 'Country')
+
+# Add a custom color column
+lifeExpDat$Custom_Color <- ifelse(lifeExpDat$Country == "India", "India", lifeExpDat$Total_Medals)
+lifeExpDat$Custom_Color <- factor(lifeExpDat$Custom_Color, levels = c("India", "Above Average", "Below Average"))
+
+dataOlympics <- olympics %>% 
+  filter(Sport != "Art Competitions")
+
+
+# AFTER 1992, CHANGE THE YEAR OF THE WINTER GAMES TO COINCIDE WITH THE NEXT SUMMER GAMES. THE TERM "YEAR" CURRENTLY REFERS TO THE OLYMPICS TOOK PLACE
+
+original <- c(1994,1998,2002,2006,2010,2014)
+
+new <- c(1996,2000,2004,2008,2012,2016)
+
+for (i in 1:length(original)) {
+  dataOlympics$Year <- gsub(original[i], new[i], dataOlympics$Year)
+}
+
+dataOlympics$Year <- as.integer(dataOlympics$Year)
+
+
+# COUNT NUMBER OF ATHLETES BY SEX AND YEAR
+
+countsSex <- dataOlympics %>% 
+  group_by(Year, Sex) %>%
+  summarize(Athletes = length(unique(ID)))
+
+countsSex$Year <- as.integer(countsSex$Year)
 
 ui <- fluidPage(
   useShinyjs(),
@@ -77,15 +140,15 @@ ui <- fluidPage(
                      tabPanel("Plot", withSpinner(plotOutput("TopPlot"))),
                      tabPanel("Data", withSpinner(DTOutput("medalTable")))
                    )),
-                   tabPanel("GDP vs Medals", tabsetPanel(
+                   tabPanel("GDP", tabsetPanel(
                      tabPanel("Plot", withSpinner(plotOutput("gdpPlot"))),
                      tabPanel("Data", withSpinner(DTOutput("gdpData")))
                    )),
-                   tabPanel("Life Expectancy vs Medals", tabsetPanel(
+                   tabPanel("Life Expectancy", tabsetPanel(
                      tabPanel("Plot", withSpinner(plotlyOutput("lifeExpPlot"))),
                      tabPanel("Data", withSpinner(DTOutput("lifeExpData")))
                    )),
-                   tabPanel("Sex Ratio vs Medals",tabsetPanel(
+                   tabPanel("Sex Ratio",tabsetPanel(
                      tabPanel("Plot", withSpinner(imageOutput("genderPlot"))),
                      tabPanel("Data", withSpinner(DTOutput("genderData")))
                    ))
@@ -97,15 +160,25 @@ ui <- fluidPage(
 server <- function(input, output, session) {
   # Sample data
   
-  medalDat <- olympics %>% select(Medal,Country,Year) %>%
-    group_by(Country) %>% 
-    summarise( Gold = sum(Medal == "Gold", na.rm = TRUE),
-               Silver = sum(Medal == "Silver", na.rm = TRUE),
-               Bronze = sum(Medal == "Bronze", na.rm = TRUE), 
-               Total = Gold + Silver + Bronze ) %>% arrange(desc(Total))
+  
   output$medalTable <- renderDT({
     datatable(medalDat, options = list(pageLength = 10, autoWidth = TRUE)) 
   })
+  # gdpData
+  output$gdpData <- renderDT({
+    datatable(gdp_data %>% select(Country,`2016`), options = list(pageLength = 10, autoWidth = TRUE)) 
+  })
+  
+  output$lifeExpData <- renderDT({
+    datatable(life_expectancy_data %>% select(Country,`Females  Life Expectancy`), options = list(pageLength = 10, autoWidth = TRUE)) 
+  })
+  
+  output$genderData <- renderDT({
+    datatable(sex_ratio_data %>% select(`Country/region`,Total), options = list(pageLength = 10, autoWidth = TRUE)) 
+  })
+  
+  
+  
   # Overview plot
   output$TopPlot <- renderPlot({
     n <- input$bins 
@@ -134,7 +207,7 @@ server <- function(input, output, session) {
       ) + labs(x = "Country", y = "Medals", title = paste0("Medals won by top ",n," countries(1896-2016)"))
   })
   
- 
+  
   
   output$heatMapPlot <- renderPlotly({
     sports_data <- olympics %>% group_by(Country,Sport) %>%
@@ -221,17 +294,19 @@ server <- function(input, output, session) {
                  Total = Gold + Silver + Bronze ) %>% 
       arrange(desc(Total)) %>% 
       inner_join(life_expectancy_data,by = 'Country')  %>%
-      mutate(Total_Medals = ifelse(Total >= mean(Total), "Above Average", "Below Average"))
-    
+      mutate(Total_Medals = ifelse(Total >= mean(Total), "Above Average", "Below Average")) %>%
+      inner_join(continent_data,by = 'Country')
     
     # Add a custom color column
     lifeExpDat$Custom_Color <- ifelse(lifeExpDat$Country == "India", "India", lifeExpDat$Total_Medals)
     lifeExpDat$Custom_Color <- factor(lifeExpDat$Custom_Color, levels = c("India", "Above Average", "Below Average"))
     
-    lifeexp_plot <- ggplot(data = lifeExpDat,aes(x = `Females  Life Expectancy`, y = Total,text = Country,col = Custom_Color)) +
+    # Plot with continent-based coloring
+    lifeexp_plot <- ggplot(data = lifeExpDat, aes(x = `Females  Life Expectancy`, y = Total, text = Country, col = Continent)) +
       geom_point() +
-      scale_color_manual(values = c("India" = "green", "Above Average" = "#F39F5A", "Below Average" = "#AE445A"),
-                         labels = c("India" = "India", "Above Average" = "Above Average", "Below Average" = "Below Average")) +
+      scale_color_manual(values = c(
+        "Africa" = "#FF6347", "Asia" = "#4682B4", "Europe" = "#32CD32", 
+        "North America" = "#FFD700", "Oceania" = "#8A2BE2", "South America" = "#FF69B4")) +  # Adjust colors as needed
       geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +
       scale_x_continuous(limits = c(60, 100)) + 
       scale_y_continuous(limits = c(1, 1000)) + 
@@ -249,11 +324,13 @@ server <- function(input, output, session) {
         axis.text = element_text(color = "white"),
         legend.text = element_text(color = "white"),
         legend.title = element_text(color = "white")
-      ) 
+      )
     
-    lifeExpPlot <- ggplotly(lifeexp_plot,tooltip = "text")
-    
+    # Convert ggplot to interactive plotly plot
+    lifeExpPlot <- ggplotly(lifeexp_plot, tooltip = "text")
     lifeExpPlot
+    
+    
   })
   
   # Sex Ratio vs Medals plot
