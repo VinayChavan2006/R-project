@@ -1,0 +1,365 @@
+---
+title: "Olympics and Social Indicators"
+author: Jatavata Balakoti, Sujal Yadav, Vinay Chavan, Utkarsh Kesharwani
+format: html
+editor: visual
+knitr:
+  opts_chunk: 
+    warning: FALSE
+    message: FALSE
+---
+
+# Introduction
+
+This report describes a basic RShiny application developed to explore data on the Olympics from 1896 to 2016, focusing on women's participation and achievements. The app features a range of visualizations, including bar graphs, scatter plots, a line chart, heat map, and pie chart, which allow users to examine trends in medals, participation by gender, and other related factors.
+
+Through a drop-down menu, users can filter views by continent and medal type or explore data comparisons by GDP, life expectancy, and sex ratio. This application offers a simple, interactive overview of historical data, highlighting gender-based trends and regional differences in Olympic success.
+
+# Explaining the Data
+
+## What were the variables?
+
+The following datasets were used in this analysis:
+
+1.  **Olympics Data (`olympics`):**
+
+    -   **Columns:** Athlete ID, Age, Sex, Height, Weight, Team, NOC (National Olympic Committee), Year, Season, Sport, and Medal Type.
+
+    -   This dataset contains detailed records of Olympic athletes, including demographic details (age, sex, height, weight) and participation in specific Olympic events. It includes information on which sport they competed in, their Olympic year, and whether they won a medal.
+
+2.  **GDP Data (`gdp_data`):**
+
+    -   **Columns:** Country, Year (2000--2023), Nominal GDP.
+
+    -   This dataset tracks the GDP of various countries from 2000 to 2023, providing insight into the economic status of the countries during the period under study.
+
+3.  **Life Expectancy Data (`life_expectancy_data`):**
+
+    -   **Columns:** Rank, Country, Life Expectancy (for both sexes), Female Life Expectancy, Male Life Expectancy.
+
+    -   This dataset provides life expectancy statistics for countries, segmented by sex, giving insight into the general health and well-being of populations.
+
+4.  **Continent Data (`continent_data`):**
+
+    -   **Columns:** Country, Continent.
+
+    -   This dataset provides the continent each country belongs to, which is useful for analyzing trends and comparing performance across different regions.
+
+## Where was it scraped from?
+
+The datasets for this analysis were obtained through a combination of web scraping and direct downloads, as outlined below:
+
+1.  GDP Data: The **GDP data** was scraped from the Wikipedia page **"List of countries by past and projected GDP (nominal)"** using the `rvest` library in R. Relevant tables (4, 5, and 6) were extracted, cleaned by removing commas, and converted to numeric format. The cleaned data was saved as `gdp.csv`.
+2.  Life Expectancy Data: The **Life Expectancy data** was scraped from the Worldometers website using `rvest`. The relevant table was extracted and saved as `life_expectancy.csv`.
+3.  Sex Ratio Data: The **Sex Ratio data** was scraped from the Wikipedia page **"List of sovereign states by sex ratio"** using `rvest`. The data was cleaned and saved as a CSV file.
+4.  Olympics Data: The **Olympics data** was directly downloaded from a GitHub repository and loaded into R for analysis. The dataset contains Olympic medals and athlete information.
+5.  Continent Data: The **Continent data** was manually extracted from the Statistics Times website and saved as a CSV file.
+
+# Potential Biases in the Data
+
+Several factors may influence the analysis and interpretation of the data in this application:
+
+-   **Historical Gender Inequality**: Early Olympic events had limited or no participation by women, skewing long-term analyses and underrepresenting female achievements, which may affect trends over time.
+
+-   **Economic and Geopolitical Disparities**: Wealthier countries tend to have more resources for athlete development, leading to an overrepresentation in medal counts, which may suggest a correlation between GDP and Olympic success that is influenced by funding availability rather than athletic performance.
+
+-   **Regional Representation**: Socioeconomic conditions in developing nations may limit athlete participation, leading to underrepresentation in global comparisons and potentially distorting continent-level analyses.
+
+# Interesting Questions to Ask
+
+-   How has female participation in the Olympics changed from 1896 to 2016, and which continents or countries have contributed most to this growth?
+
+-   Which countries and continents have won the most medals in women's events, and how has this changed over time?
+
+-   What are the top sports in which female athletes from different countries or continents have excelled, and are there regional patterns in sport specialization?
+
+-   Is there a relationship between a country's GDP and the number of medals won by female athletes? How does this vary by continent?
+
+-   How does female life expectancy correlate with the number of Olympic medals a country's female athletes have won?
+
+-   What trends exist in the gender ratio of Olympic athletes over time, and when did key shifts toward gender balance occur?
+
+-   In 2016, what was the distribution of male and female athletes by country, and how does this compare across continents?
+
+# Important Visualisation
+
+```{r echo=FALSE}
+library(shiny)
+library(bslib)
+library(ggplot2)
+library(shinythemes)
+library(dplyr)
+library(gganimate)
+library(reshape2)
+library(tibble)
+library(plotly)
+library(rvest)
+library(tidyverse)
+library(gifski)
+library(png)
+library(shinycssloaders)
+library(DT)
+library(shinyjs)
+
+# Loading Data Required
+load(url("https://raw.githubusercontent.com/VinayChavan2006/R-project/main/Data/datasets/Continent.Rdata"))
+load(url("https://raw.githubusercontent.com/VinayChavan2006/R-project/main/Data/datasets/olympicsDat.Rdata"))
+load(url("https://raw.githubusercontent.com/VinayChavan2006/R-project/main/Data/datasets/SexRatio.RData"))
+load(url("https://raw.githubusercontent.com/VinayChavan2006/R-project/main/Data/datasets/NominalGDP.Rdata"))
+load(url("https://raw.githubusercontent.com/VinayChavan2006/R-project/main/Data/datasets/Lifeexp.Rdata"))
+
+# Slight Modifications in Colnames
+colnames(olympics)[colnames(olympics) == "Team"] = "Country"
+colnames(sex_ratio_data)[colnames(sex_ratio_data) == '`Country/region`'] = "Country"
+
+# Grouping and Joining of Data
+olympics <- olympics %>%
+  inner_join(continent_data,by = 'Country')
+conts <- unique(olympics$Continent)
+
+medalDat <- olympics %>% select(Medal,Country,Year) %>%
+  group_by(Country) %>% 
+  summarise( Gold = sum(Medal == "Gold", na.rm = TRUE),
+             Silver = sum(Medal == "Silver", na.rm = TRUE),
+             Bronze = sum(Medal == "Bronze", na.rm = TRUE), 
+             Total = Gold + Silver + Bronze ) %>% arrange(desc(Total)) %>%
+  inner_join(continent_data,by = 'Country')
+
+sports_data <- olympics %>% group_by(Country,Sport) %>%
+  summarise( Gold = sum(Medal == "Gold", na.rm = TRUE),
+             Silver = sum(Medal == "Silver", na.rm = TRUE), 
+             Bronze = sum(Medal == "Bronze", na.rm = TRUE), 
+             Total = Gold + Silver + Bronze ) %>% 
+  arrange(desc(Total)) %>% head(50)
+
+
+dat <- olympics %>% group_by(Country) %>%
+    summarise( Gold = sum(Medal == "Gold", na.rm = TRUE),
+               Silver = sum(Medal == "Silver", na.rm = TRUE), 
+               Bronze = sum(Medal == "Bronze", na.rm = TRUE), 
+               Total = Gold + Silver + Bronze ) 
+  gender_medals <- dat %>%
+    inner_join(olympics) %>% select(Sex,Total) %>%
+    group_by(Sex) %>%
+    summarise(TotalMedals = sum(Total))
+  
+  # Create the pie chart
+  ggplot(gender_medals, aes(x = "", y = TotalMedals, fill = Sex)) + 
+    geom_bar(stat = "identity", width = 1) +
+    coord_polar(theta = "y") +
+    ggtitle("Medals Won by Males vs Females") +
+    theme_minimal() +
+    theme(axis.text = element_blank(), axis.title = element_blank()) +
+    scale_fill_manual(values = c("pink", "blue")) 
+
+```
+
+```{r echo=FALSE}
+# Reactive filtered data based on selected continents
+filtered_olympics <- olympics %>%
+    filter(Continent %in% unique(continent_data$Continent))
+
+
+# Medal Table
+  medalDat <- filtered_olympics %>%
+    group_by(Country) %>%
+    summarise(
+      Gold = sum(Medal == "Gold", na.rm = TRUE),
+      Silver = sum(Medal == "Silver", na.rm = TRUE),
+      Bronze = sum(Medal == "Bronze", na.rm = TRUE),
+      Total = Gold + Silver + Bronze
+    ) %>%
+    arrange(desc(Total)) %>% head(10)
+  
+  top_vals <- medalDat %>%
+    select(Country, "Total")
+  
+  # Convert the data to long format
+  top_vals_long <- melt(top_vals, id.vars = "Country", variable.name = "Medal", value.name = "Count")
+  
+  # Set the factor levels for Country based on the sorted order
+  top_vals_long$Country <- factor(top_vals_long$Country, levels = top_vals$Country)
+  
+  ggplot(data = top_vals_long, aes(x = Country, y = Count, fill = Medal)) +
+    geom_bar(stat = "identity", alpha = 0.7) + 
+    scale_fill_manual(values = c("Gold" = "#FFD700", "Silver" = "#D7D7D7", "Bronze" = "#CC6600", "Total" = "#F39F5A")) +
+    theme(
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.background = element_rect(fill = "#343138", color = "white"),
+      plot.background = element_rect(fill = "#343138", color = "white"),
+      legend.background = element_rect(fill = "#343138", color = "white"),
+      axis.title.x = element_text(color = "white"),
+      axis.title.y = element_text(color = "white"),
+      plot.title = element_text(color = "white"),
+      axis.text.x = element_text(angle = 30, hjust = 1),
+      axis.text = element_text(color = "white"),
+      legend.text = element_text(color = "white"),
+      legend.title = element_text(color = "white")
+    ) + 
+    labs(
+      x = "Country",
+      y = "Medals",
+      title = paste0("Medals won by top 10 countries (1896-2016)")
+    )
+
+```
+
+The top ten countries with the most Olympic medals from 1896 to 2016 are predominantly from developed, wealthier nations, particularly Europe. This reflects the impact of better funding, infrastructure, and access to training on Olympic success.
+
+```{r echo=FALSE}
+medal_type <- "Gold"
+
+    dataOlympics <- olympics %>% 
+      filter(Sport != "Art Competitions")
+    
+    
+    # AFTER 1992, CHANGE THE YEAR OF THE WINTER GAMES TO COINCIDE WITH THE NEXT SUMMER GAMES. THE TERM "YEAR" CURRENTLY REFERS TO THE OLYMPICS TOOK PLACE
+    
+    original <- c(1994,1998,2002,2006,2010,2014)
+    
+    new <- c(1996,2000,2004,2008,2012,2016)
+    
+    for (i in 1:length(original)) {
+      dataOlympics$Year <- gsub(original[i], new[i], dataOlympics$Year)
+    }
+    
+    dataOlympics$Year <- as.integer(dataOlympics$Year)
+    
+    
+    # COUNT NUMBER OF ATHLETES BY SEX AND YEAR
+    
+    countsSex <- dataOlympics %>% 
+      group_by(Year, Sex) %>%
+      summarize(Athletes = length(unique(ID)))
+    
+    countsSex$Year <- as.integer(countsSex$Year)
+    
+    ggplot(countsSex, aes(x=Year, y=Athletes, group=Sex, color=Sex)) +
+      geom_point(size=2) +
+      geom_line()  +
+      scale_color_manual(values=c("#FFDDAE","#CDC1FF")) +
+      theme_minimal() +
+      theme(
+        panel.grid = element_blank(),
+        panel.background = element_rect(fill = "#343138", color = "white"),
+        plot.background = element_rect(fill = "#343138", color = "white"), 
+        legend.background = element_rect(fill = "#343138", color = "white"), 
+        axis.title.x = element_text(color = "white"),
+        axis.title.y = element_text(color = "white"), 
+        plot.title = element_text(color = "white"),
+        axis.text = element_text(color = "white"),
+        legend.text = element_text(color = "white"),
+        legend.title = element_text(color = "white")
+      ) +
+      labs(x = "Year", y = "Athletes", 
+           title="Male and Female athletes over time", 
+           subtitle = "Olympic Games (1896 to 2016)")
+```
+
+Male athlete participation has historically been higher than female participation, with declines during global wars and political conflicts. However, since the 1980s, female participation has surged due to expanded events, increased gender equality awareness, and societal shifts. These changes were supported by women's sports organizations and legal frameworks promoting gender equality in sports.
+
+```{r echo=FALSE}
+gdp_data <- gdp_data %>% select(Country,`2016`)
+    #olympics <- olympics %>%
+    #  inner_join(continent_data,by = 'Country')
+    conts <- unique(olympics$Continent)
+    
+    gdpDat <- olympics %>%
+      filter(Continent %in% conts) %>%
+      filter(Sex == "F") %>%
+      group_by(Country) %>%
+      summarise( Gold = sum(Medal == "Gold", na.rm = TRUE),
+                 Silver = sum(Medal == "Silver", na.rm = TRUE), 
+                 Bronze = sum(Medal == "Bronze", na.rm = TRUE), 
+                 Total = Gold + Silver + Bronze ) %>% 
+      arrange(desc(Total)) %>% 
+      inner_join(gdp_data,by = 'Country') %>% 
+      mutate(GDP_category = ifelse(`2016` >= mean(`2016`), "Above Average", "Below Average"))
+    # Create the box plots
+    ggplot(gdpDat, aes(y = GDP_category, x = Total)) +
+      geom_boxplot(aes(fill = GDP_category), color = "#FFDDAE", outlier.color = "#FFDDAE") + 
+      scale_x_log10() +
+      theme_minimal() + 
+      labs(title = "Total Medals by GDP Category", y = "GDP Category", x = "Total Medals") + 
+      theme_minimal() + theme(
+        panel.grid = element_blank(), 
+        panel.background = element_rect(fill = "#343138", color = "white"),
+        plot.background = element_rect(fill = "#343138", color = "white"), 
+        legend.background = element_rect(fill = "#343138", color = "white"), 
+        axis.title.x = element_text(color = "white"),
+        axis.title.y = element_text(color = "white"), 
+        plot.title = element_text(color = "white"),
+        axis.text = element_text(color = "white"),
+        legend.text = element_text(color = "white"),
+        legend.title = element_text(color = "white")
+      )
+```
+
+The box plot shows that countries with below-average GDP tend to win fewer medals, with their median medal count lower than the first quartile of above-average GDP countries. This highlights the advantage of wealthier nations in Olympic performance.\
+
+```{r echo=FALSE}
+lifeExpDat <- olympics %>%
+      filter(Continent %in% conts) %>%
+      filter(Sex == "F") %>%
+      group_by(Country) %>%
+      summarise( Gold = sum(Medal == "Gold", na.rm = TRUE),
+                 Silver = sum(Medal == "Silver", na.rm = TRUE), 
+                 Bronze = sum(Medal == "Bronze", na.rm = TRUE), 
+                 Total = Gold + Silver + Bronze ) %>% 
+      arrange(desc(Total)) %>% 
+      inner_join(life_expectancy_data,by = 'Country')  %>%
+      mutate(Total_Medals = ifelse(Total >= mean(Total), "Above Average", "Below Average")) %>%
+      inner_join(continent_data,by = 'Country')
+    
+    # Add a custom color column
+    lifeExpDat$Custom_Color <- ifelse(lifeExpDat$Country == "India", "India", lifeExpDat$Total_Medals)
+    lifeExpDat$Custom_Color <- factor(lifeExpDat$Custom_Color, levels = c("India", "Above Average", "Below Average"))
+    
+    # Plot with continent-based coloring
+    lifeexp_plot <- ggplot(data = lifeExpDat, aes(x = `Females  Life Expectancy`, y = Total, text = Country, col = Continent)) +
+      geom_point() +
+      scale_color_manual(values = c(
+        "Africa" = "#FF6347", "Asia" = "#4682B4", "Europe" = "#32CD32", 
+        "North America" = "#FFD700", "Oceania" = "#8A2BE2", "South America" = "#FF69B4")) +  # Adjust colors as needed
+      geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +
+      scale_x_continuous(limits = c(60, 100)) + 
+      scale_y_continuous(limits = c(1, 1000)) + 
+      scale_y_log10() +
+      labs(title = "Total Medals Won by Females (Country-wise)", x = "Life Expectancy of females", y = "Total Medals") +
+      theme_minimal() + 
+      theme( 
+        panel.grid = element_blank(),
+        panel.background = element_rect(fill = "#343138", color = "white"),
+        plot.background = element_rect(fill = "#343138", color = "white"), 
+        legend.background = element_rect(fill = "#343138", color = "white"), 
+        axis.title.x = element_text(color = "white"),
+        axis.title.y = element_text(color = "white"), 
+        plot.title = element_text(color = "white"),
+        axis.text = element_text(color = "white"),
+        legend.text = element_text(color = "white"),
+        legend.title = element_text(color = "white")
+      )
+    lifeexp_plot
+```
+
+The graph shows a correlation between female life expectancy and Olympic success. European countries, with higher life expectancy, win more medals, while African countries, with lower life expectancy, contribute fewer medals, suggesting links between healthcare, economic development, and Olympic performance.
+
+```         
+```
+
+# Conclusion
+
+This report presents an analysis of Olympic data from 1896 to 2016, focusing on female participation and medal achievements. The findings highlight significant trends, such as the steady increase in female athlete participation since the 1980s and the dominance of wealthier, developed countries in winning Olympic medals. The correlation between GDP and Olympic success, as well as the influence of female life expectancy on medal outcomes, underscores the importance of economic and social factors in shaping athletic performance. Despite the progress in gender equality, challenges such as historical gender disparities and regional economic inequalities continue to impact the representation and success of female athletes. Overall, this application provides valuable insights into the evolution of women's participation in the Olympics and the factors influencing their success on the global stage.
+
+# References
+
+**Life Expectancy Data** : https://www.worldometers.info/demographics/life-expectancy/
+
+**Sex Ratio Data** : https://en.wikipedia.org/wiki/List_of_sovereign_states_by_sex_ratio
+
+**Olympics Data** : https://raw.githubusercontent.com/VinayChavan2006/R-project/main/Data/datasets/olympicsDat.Rdata,
+
+**Continent Data** : https://statisticstimes.com/geography/countries-by-continents.php
+
+**GDP Data** : https://en.wikipedia.org/wiki/List_of_countries_by_past_and_projected_GDP\_(nominal)
